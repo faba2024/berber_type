@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import {openDatabase} from '../server/sqlite.mjs';
+import {createLocalAuth} from '../server/local-auth.mjs';
+const DB=openDatabase(':memory:');let now=1000000;
+const auth=createLocalAuth(DB,{now:()=>now});
+async function request(path,body,cookie='',origin='http://127.0.0.1:5173'){
+ const req={method:body?'POST':'GET',headers:{cookie,origin}};
+ const res={status:0,headers:{},data:null,writeHead(status,headers){this.status=status;this.headers=headers},end(body){this.data=JSON.parse(body)}};
+ await auth.handle(req,res,new URL('http://127.0.0.1:5173/api/'+path),Buffer.from(JSON.stringify(body||{})));
+ return res;
+}
+assert.equal((await request('session')).data.configured,false);
+assert.equal(auth.authenticated({headers:{}}),false);
+assert.equal((await request('setup-login',{email:'test@example.test',password:'short'})).status,400);
+assert.equal((await request('setup-login',{email:'test@example.test',password:'test-only-password'},'','https://outside.test')).status,403);
+const setup=await request('setup-login',{email:'test@example.test',password:'test-only-password'});
+assert.equal(setup.status,200);
+const cookie=setup.headers['Set-Cookie'].split(';')[0];
+assert.match(setup.headers['Set-Cookie'],/HttpOnly; SameSite=Strict/);
+assert.equal(auth.authenticated({headers:{cookie}}),true);
+assert.equal((await request('setup-login',{email:'second@example.test',password:'different-password'})).status,409);
+const stored=DB.prepare('SELECT data FROM records WHERE id=?').bind('local-owner').first().data;
+assert.equal(stored.includes('test-only-password'),false);
+assert.equal((await request('logout',{},cookie)).status,200);
+assert.equal(auth.authenticated({headers:{cookie}}),false);
+assert.equal((await request('login',{email:'test@example.test',password:'wrong'})).status,401);
+const login=await request('login',{email:'test@example.test',password:'test-only-password'});
+assert.equal(login.status,200);
+const fresh=login.headers['Set-Cookie'].split(';')[0];
+assert.notEqual(fresh,cookie);
+now+=8*60*60*1000+1;
+assert.equal(auth.authenticated({headers:{cookie:fresh}}),false);
+for(let i=0;i<5;i++)assert.equal((await request('login',{email:'test@example.test',password:'wrong'})).status,401);
+assert.equal((await request('login',{email:'test@example.test',password:'test-only-password'})).status,429);
+now+=15*60*1000+1;
+assert.equal((await request('login',{email:'test@example.test',password:'test-only-password'})).status,200);
+DB.close();
+console.log('PASS: first setup, password hashing, duplicate setup, origin restriction, invalid credentials, session, expiry, logout and throttling.');

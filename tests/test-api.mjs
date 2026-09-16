@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';import {api} from '../server/api.mjs';import {openDatabase} from '../server/sqlite.mjs';
+const env={ADMIN_EMAIL:'owner@example.test',DB:openDatabase(':memory:')};
+async function call(p,b,admin=false,origin='https://test.local'){const headers={'Origin':origin,'Content-Type':'application/json'};if(admin)headers['oai-authenticated-user-email']=env.ADMIN_EMAIL;const response=await api(new Request('https://test.local/api/'+p,{headers,method:b?'POST':'GET',body:b?JSON.stringify(b):undefined}),env);return {status:response.status,data:await response.json()}}
+assert.equal((await call('bootstrap')).data.services.length,6);assert.equal((await call('admin')).status,403);assert.equal((await call('admin',null,true)).status,200);
+const b={name:'Cliente Teste',phone:'77999990000',date:'2027-01-12',time:'10:00',service:'service-0',barber:'barber-0',consent:true};
+assert.equal((await call('bookings',{...b,phone:'123'})).status,400);assert.equal((await call('bookings',b,false,'https://evil.test')).status,403);
+const r=await call('bookings',b);assert.equal(r.status,201);assert.equal((await call('bookings',b)).status,409);assert.equal((await call('bookings',{...b,time:'10:15'})).status,409);assert.equal((await call('admin',null,true)).data.bookings.length,1);
+let saved=(await call('admin',null,true)).data.bookings[0];assert.equal(saved.phone,'5577999990000');assert.equal(saved.consent,true);
+assert.equal((await call('admin/status',{id:r.data.id,status:'Cancelado'},true)).status,200);assert.equal((await call('bookings',b)).status,201);
+assert.equal((await call('admin/status',{id:r.data.id,status:'Confirmado'},true)).status,409);
+assert.equal((await call('admin/save',{kind:'expenses',item:{name:'Aluguel',amount:100,date:'2027-01-12',category:'Fixa'}},true)).status,200);
+assert.equal((await call('admin/save',{kind:'products',item:{id:'product-0',name:'Pomada',price:49.9,stock:-2}},true)).status,400);
+assert.equal((await call('admin/save',{kind:'settings',item:{name:'Barber Prime',phone:'77981388366',open:9,close:20,reminderHours:24}},false)).status,403);
+assert.equal((await call('bookings',{...b,date:'2027-02-31'})).status,400);
+assert.equal((await call('bookings',{...b,time:'10:75'})).status,400);
+assert.equal((await call('availability?day=2027-02-31&barber=barber-0')).status,400);
+assert.equal((await call('admin/save',{kind:'settings',item:{name:'Barber Prime',phone:'77981388366',open:9,close:20,reminderHours:-1}},true)).status,400);
+const race=await Promise.all([call('bookings',{...b,date:'2027-01-13'}),call('bookings',{...b,date:'2027-01-13'})]);
+assert.deepEqual(race.map(x=>x.status).sort(),[201,409]);
+env.DB.close();
+console.log('PASS: phone/consent, authorization, origins, overlapping slots, rollback, cancellation, expenses, stock, dates, hours and concurrent bookings.');

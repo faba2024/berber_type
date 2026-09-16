@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import {createClient} from '@libsql/client';
+import {readFile} from 'node:fs/promises';
+import {database} from '../server/turso.mjs';
+import {cloudHandler} from '../server/cloud.mjs';
+const client=createClient({url:':memory:'});
+for(const sql of (await readFile('drizzle/0000_volatile_rick_jones.sql','utf8')).split('--> statement-breakpoint'))await client.execute(sql);
+const DB=database(client),env={ADMIN_EMAIL:'test@example.test',ADMIN_SETUP_KEY:'test-installation-code-with-32-characters'};
+let now=Date.now(),handler=cloudHandler(DB,env,{now:()=>now});
+async function call(path,body,cookie='',extra={}){return handler(new Request('https://barber.test/api/'+path,{method:body?'POST':'GET',headers:{origin:'https://barber.test',cookie,...extra},body:body?JSON.stringify(body):undefined}))}
+const credentials={email:env.ADMIN_EMAIL,password:'test-only-password',setupKey:env.ADMIN_SETUP_KEY};
+assert.equal((await call('session')).status,200);
+assert.equal((await call('admin',null,'',{'oai-authenticated-user-email':env.ADMIN_EMAIL})).status,403);
+assert.equal((await call('setup-login',{...credentials,setupKey:'wrong'})).status,403);
+assert.equal((await call('setup-login',credentials,'',{origin:'https://other.test'})).status,403);
+const setup=await call('setup-login',credentials);assert.equal(setup.status,200);
+const cookie=setup.headers.get('set-cookie').split(';')[0];assert.match(setup.headers.get('set-cookie'),/Secure/);
+handler=cloudHandler(DB,env,{now:()=>now});
+assert.equal((await (await call('session',null,cookie)).json()).authenticated,true);
+assert.equal((await call('bootstrap')).status,200);
+assert.equal((await call('admin',null,cookie)).status,200);
+assert.equal((await call('setup-login',credentials)).status,409);
+assert.equal((await call('logout',{},cookie)).status,200);
+assert.equal((await (await call('session',null,cookie)).json()).authenticated,false);
+const login=await call('login',credentials);assert.equal(login.status,200);
+const cookie2=login.headers.get('set-cookie').split(';')[0];now+=28800001;
+assert.equal((await (await call('session',null,cookie2)).json()).authenticated,false);
+for(let i=0;i<10;i++)assert.equal((await call('login',{...credentials,password:'wrong-password'})).status,401);
+handler=cloudHandler(DB,env,{now:()=>now});assert.equal((await call('login',credentials)).status,429);
+// Real libSQL transaction must roll back the first write when the second fails.
+await assert.rejects(DB.batch([DB.prepare("INSERT INTO records VALUES('rollback','test','{}',0)"),DB.prepare("INSERT INTO records VALUES('business','test','{}',0)")]));
+assert.equal(await DB.prepare("SELECT id FROM records WHERE id='rollback'").first(),null);
+console.log('Cloud: setup protegido, sessão persistente, logout, expiração, limite de login, cabeçalho falso e rollback aprovados.');client.close();

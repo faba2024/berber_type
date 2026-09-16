@@ -1,0 +1,12 @@
+const money=n=>Number(n).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const modal=document.querySelector('#modal'),body=document.querySelector('#modal-body');let cart=[];
+let book,add,showCart,dashboard;
+function show(html,wide=false){body.innerHTML=html;modal.style.width=wide?'min(1000px,95vw)':'min(650px,94vw)';if(!modal.open)modal.showModal()}
+let toastTimer;function toast(t){const el=document.querySelector('#toast');el.textContent=t;el.style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.style.display='none',4200)}
+function remove(i){cart.splice(i,1);document.querySelector('#count').textContent=cart.length;showCart()}
+function plans(){show('<h2>CLUBE PRIME</h2><p>Cortes mensais, descontos em produtos, atendimento prioritário e brindes exclusivos.</p><p class="notice">Consulte os valores e condições dos planos com a barbearia.</p><a class="gold" href="https://wa.me/5577981388366?text=Olá!%20Quero%20conhecer%20o%20Clube%20Prime." target="_blank" rel="noopener">CONSULTAR PLANOS</a>')}
+const pics=[['Ambiente','interior.png'],['Cortes','hero.png'],['Ambiente','interior.png'],['Barba','hero.png']];
+function gallery(category='Todos'){document.querySelector('#filters').innerHTML=['Todos','Cortes','Barba','Ambiente'].map(c=>`<button class="${c===category?'active':''}" onclick="gallery('${c}')">${c.toUpperCase()}</button>`).join('');document.querySelector('#gallery').innerHTML=pics.filter(p=>category==='Todos'||category===p[0]).map(p=>`<img loading="lazy" alt="${p[0]} · referência visual Barber Prime" src="${p[1]}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:5px;object-position:${p[0]==='Ambiente'?'center':'75% center'}">`).join('')}gallery();
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+modal.addEventListener('click',e=>{if(e.target===modal){const r=modal.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)modal.close()}});
+if(document.modelContext?.registerTool){try{document.modelContext.registerTool({name:'start_booking',description:'Abre o formulário de agendamento com telefone; não cria nem envia uma reserva.',inputSchema:{type:'object',properties:{serviceIndex:{type:'integer',minimum:0}},required:['serviceIndex'],additionalProperties:false},annotations:{readOnlyHint:false},execute:async({serviceIndex})=>{await book(serviceIndex);return {opened:true}}})}catch(e){console.warn('WebMCP indisponível')}}

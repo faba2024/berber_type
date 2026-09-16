@@ -1,0 +1,21 @@
+{
+  "name": "barber-prime",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server/local.mjs",
+    "build": "node scripts/build.mjs",
+    "db:generate": "drizzle-kit generate",
+    "build:vercel": "node scripts/migrate-turso.mjs && node scripts/build-vercel.mjs"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.4",
+    "drizzle-orm": "^0.44.5"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.18.0"
+  },
+  "engines": {
+    "node": "24.x"
+  }
+}
